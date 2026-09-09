@@ -1,0 +1,105 @@
+name: Reconcile ReturnReady PR with current upstream
+on:
+  push:
+    branches: [ci/returnready-import]
+    paths: [.github/workflows/returnready-sync.yml]
+permissions:
+  contents: write
+concurrency:
+  group: returnready-pr-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'josepha-mayo/awesome-phone-call-agents'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      OLD_HEAD: dfb9455d473fe3af6651aa9296b03e4b653d55fc
+      OLD_BASE: 8f75267dda86c7261ad4f079b28db30a9df67e1b
+      NEW_BASE: d2e7a4ff9c4bac62ed25032d5017dd715b9e1be3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dfb9455d473fe3af6651aa9296b03e4b653d55fc
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Read and validate the exact updated upstream baseline
+        run: |
+          mkdir -p /tmp/returnready-sync
+          test "$(git ls-remote origin refs/heads/feat/returnready-review | cut -f1)" = "$OLD_HEAD"
+          git fetch https://github.com/CALLE-AI/awesome-phone-call-agents.git "$NEW_BASE"
+          test "$(git rev-parse FETCH_HEAD)" = "$NEW_BASE"
+          git worktree add --detach /tmp/returnready-upstream "$NEW_BASE"
+          python3 /tmp/returnready-upstream/scripts/validate_repository.py > /tmp/returnready-sync/upstream-baseline.log 2>&1
+          python3 scripts/check_branch_name.py --branch feat/returnready-review
+          git config user.name 'josepha-mayo'
+          git config user.email '192471872+josepha-mayo@users.noreply.github.com'
+      - name: Resolve only the README resource-list conflict and preserve all upstream changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,subprocess,json
+          old=os.environ['OLD_HEAD'];base=os.environ['OLD_BASE'];new=os.environ['NEW_BASE']
+          def git(*args):return subprocess.check_output(['git',*args],text=True)
+          entry='- [ReturnReady](apps/python/returnready/) - Local return-enquiry review workbench that compares recipient quotations and later corrections with written instructions, with no-call examples and explicit approval before CALL-E requests.'
+          old_readme=git('show',old+':README.md');base_readme=git('show',base+':README.md');new_readme=git('show',new+':README.md')
+          assert old_readme.count(entry)==1 and entry not in base_readme and 'apps/python/returnready/' not in new_readme
+          assert old_readme.replace('\n'+entry,'',1)==base_readme, 'Unexpected prior root README changes'
+          original_app_tree=git('rev-parse',old+':apps/python/returnready').strip()
+          assert subprocess.run(['git','cat-file','-e',new+':apps/python/returnready'],capture_output=True).returncode!=0, 'Upstream now owns this app path; stop for review'
+          merge=subprocess.run(['git','merge','--no-ff','--no-commit',new],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+          Path('/tmp/returnready-sync/merge.log').write_text(merge.stdout)
+          conflicts=git('diff','--name-only','--diff-filter=U').splitlines()
+          assert merge.returncode in [0,1] and set(conflicts).issubset({'README.md'}), conflicts
+          assert new_readme.count('### Apps\n')==1
+          Path('README.md').write_text(new_readme.replace('### Apps\n','### Apps\n\n'+entry,1))
+          subprocess.run(['git','add','README.md'],check=True)
+          assert not git('diff','--name-only','--diff-filter=U').strip()
+          tree=git('write-tree').strip()
+          assert git('rev-parse',tree+':apps/python/returnready').strip()==original_app_tree
+          paths=git('diff','--cached','--name-only',new).splitlines()
+          assert len(paths)==17 and all(p=='README.md' or p.startswith('apps/python/returnready/') for p in paths), paths
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          subprocess.run(['git','commit','-m','chore(apps): merge current upstream and retain returnready listing'],check=True)
+          commit=git('rev-parse','HEAD').strip()
+          assert git('show','-s','--format=%P',commit).strip().split()==[old,new]
+          Path('/tmp/returnready-sync/merge-state.json').write_text(json.dumps({'old_head':old,'upstream':new,'merge_commit':commit,'conflicts':conflicts,'changed_files_against_upstream':paths,'app_tree_unchanged':True,'force_push':False},indent=2))
+          PY
+      - name: Rerun unit, HTTP and repository checks without service credentials
+        run: |
+          (cd apps/python/returnready && env -u CALLE_API_KEY python3 -m unittest test_returnready http_test test_completion -v) > /tmp/returnready-sync/app-tests.log 2>&1
+          python3 scripts/validate_repository.py > /tmp/returnready-sync/repository-with-app.log 2>&1
+      - name: Install browser for actual local HTTP workflow
+        run: |
+          python3 -m venv /tmp/returnready-browser
+          /tmp/returnready-browser/bin/pip -q install playwright==1.55.0
+          /tmp/returnready-browser/bin/python -m playwright install --with-deps chromium
+      - name: Verify the browser and preserve exact test evidence
+        run: |
+          (cd apps/python/returnready && env -u CALLE_API_KEY /tmp/returnready-browser/bin/python browser_completion.py) > /tmp/returnready-sync/browser.log 2>&1
+          python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime,timezone
+          import json,re,subprocess,os
+          out=Path('/tmp/returnready-sync');app=Path('apps/python/returnready')
+          log=(out/'app-tests.log').read_text();assert re.search(r'Ran 92 tests',log) and log.rstrip().endswith('OK')
+          browser=json.loads((app/'evidence03/browser-http.json').read_text());assert browser['status']=='passed' and browser['count']==18
+          (out/'browser-http.json').write_text(json.dumps(browser,indent=2))
+          summary=json.loads((out/'merge-state.json').read_text());summary.update(status='passed',checked_at=datetime.now(timezone.utc).isoformat(),unit_http_tests=92,browser_workflows=18,repository_validation='passed on updated upstream and merged candidate; scripts unchanged',live_provider_calls=0,upstream_pr=408,scope='README merge only; app tree unchanged. No service call or competition submission.')
+          (out/'verification.json').write_text(json.dumps(summary,indent=2))
+          subprocess.run(['git','restore','--worktree','apps/python/returnready'],check=True)
+          assert not subprocess.check_output(['git','diff','--name-only'],text=True).strip()
+          PY
+      - name: Fast-forward only the existing PR branch after successful verification
+        run: |
+          test "$(git ls-remote origin refs/heads/feat/returnready-review | cut -f1)" = "$OLD_HEAD"
+          git push origin HEAD:feat/returnready-review
+          git rev-parse HEAD > /tmp/returnready-sync/pushed-head.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: returnready-pr-sync-evidence
+          path: /tmp/returnready-sync/
+          retention-days: 14
