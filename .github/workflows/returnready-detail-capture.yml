@@ -1,0 +1,31 @@
+name: ReturnReady native detail capture
+on:
+  push:
+    branches: [media/returnready-simple-20260909]
+    paths: [.github/workflows/returnready-detail-capture.yml, media/returnready-detail-capture.py]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser runtime
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install chromium ffmpeg
+      - name: Capture unchanged local application
+        run: python media/returnready-detail-capture.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: returnready-native-details
+          path: detail-capture-output/
+          retention-days: 14
+          if-no-files-found: error
