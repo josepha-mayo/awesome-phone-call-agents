@@ -1,0 +1,44 @@
+name: ReturnReady finished MCP result verification
+on:
+  push:
+    branches: [ci/returnready-mcp-20260909]
+    paths: [.github/workflows/returnready-mcp-candidate.yml, RETURNREADY_MCP_REBUILD]
+permissions:
+  contents: write
+concurrency:
+  group: returnready-mcp-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/ci/returnready-mcp-20260909'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      CALLE_TELEMETRY: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install browser and local media tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng
+          python -m pip -q install playwright==1.55.0
+          python -m playwright install --with-deps chromium ffmpeg
+      - name: Verify original and new code, actual HTTP workflows, media and scoped contribution
+        run: python returnready-mcp-input/verify04.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: returnready-mcp-verified
+          path: |
+            apps/python/returnready/
+            returnready-mcp-input/verify04.py
+            returnready-mcp-input/patch04.py
+          retention-days: 14
