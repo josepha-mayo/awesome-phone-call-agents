@@ -1,0 +1,43 @@
+name: ReturnReady clear stock narration
+on:
+  push:
+    branches: [media/returnready-clear-20260909]
+    paths: [.github/workflows/returnready-clear-voice.yml, media/returnready-clear/**]
+permissions:
+  contents: read
+concurrency:
+  group: returnready-clear-narration
+  cancel-in-progress: false
+jobs:
+  voice:
+    if: github.ref == 'refs/heads/media/returnready-clear-20260909'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install bounded neural speech runtime
+        run: |
+          sudo apt-get update -qq -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
+          sudo apt-get install -y --no-install-recommends espeak-ng libsndfile1
+          python -m pip install 'kokoro-onnx==0.5.0' 'soundfile==0.13.1' 'onnxruntime==1.22.1' 'numpy==2.2.6'
+      - name: Download official stock model and voices
+        run: |
+          curl -fL --retry 2 --connect-timeout 20 --max-time 180 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx' -o kokoro-v1.0.onnx
+          curl -fL --retry 2 --connect-timeout 20 --max-time 180 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin' -o voices-v1.0.bin
+      - name: Generate seven independent voice segments
+        run: python media/returnready-clear/generate_voice.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: returnready-clear-voice
+          path: voice-output/
+          retention-days: 14
+          if-no-files-found: error
