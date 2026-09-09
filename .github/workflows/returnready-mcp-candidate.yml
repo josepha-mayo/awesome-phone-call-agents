@@ -24,13 +24,14 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Install browser and local media tools
+          node-version: '22'
+      - name: Install browser and local media tools from verified sources
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update -qq
+          sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- install -y --no-install-recommends ffmpeg espeak-ng
           python -m pip -q install playwright==1.55.0
-          python -m playwright install --with-deps chromium ffmpeg
+          python -m playwright install chromium ffmpeg
       - name: Verify original and new code, actual HTTP workflows, media and scoped contribution
         run: python returnready-mcp-input/verify04.py
       - uses: actions/upload-artifact@v4
