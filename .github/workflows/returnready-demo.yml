@@ -1,0 +1,136 @@
+name: Record ReturnReady actual HTTP demonstration
+on:
+  push:
+    branches: [ci/returnready-demo-20260909]
+    paths: [.github/workflows/returnready-demo.yml]
+permissions:
+  contents: read
+concurrency:
+  group: returnready-no-call-demo
+  cancel-in-progress: false
+jobs:
+  record:
+    if: github.repository == 'josepha-mayo/awesome-phone-call-agents'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fc940c33882d5f46f244891c15129de911f08c4c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Install isolated browser tooling
+        run: |
+          mkdir -p /tmp/returnready-demo
+          python3 -m venv /tmp/rr-browser
+          /tmp/rr-browser/bin/pip -q install playwright==1.55.0
+          /tmp/rr-browser/bin/python -m playwright install --with-deps chromium
+          npm install --prefix /tmp/rr-agent agent-browser
+          /tmp/rr-agent/node_modules/.bin/agent-browser --version > /tmp/returnready-demo/agent-browser-version.txt
+      - name: Repeat existing code and actual HTTP browser gates
+        run: |
+          (cd apps/python/returnready && env -u CALLE_API_KEY python3 -m unittest test_returnready http_test test_completion -v) > /tmp/returnready-demo/unit-http.log 2>&1
+          (cd apps/python/returnready && env -u CALLE_API_KEY /tmp/rr-browser/bin/python browser_completion.py) > /tmp/returnready-demo/browser-http.log 2>&1
+          cp apps/python/returnready/evidence03/browser-http.json /tmp/returnready-demo/
+      - name: Record genuine UI interactions with synthetic inputs and unchanged CSP
+        run: |
+          cat > /tmp/record_returnready.py <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timezone
+          import hashlib,json,os,socket,subprocess,sys,time,urllib.request,shutil
+          from playwright.sync_api import sync_playwright, expect
+          root=Path.cwd(); app=root/'apps/python/returnready'; out=Path('/tmp/returnready-demo')
+          expected={'returnready.py':'3b4c883528809dcb464484d7aa4793ef7b5ae2f5','web/index.html':'badf746b8484cba3f95a94e02624ec910362a6fe'}
+          for name,sha in expected.items():
+              data=(app/name).read_bytes(); assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()==sha
+          unit=(out/'unit-http.log').read_text(); assert 'Ran 92 tests' in unit and unit.rstrip().endswith('OK')
+          prior=json.loads((out/'browser-http.json').read_text()); assert prior['status']=='passed' and prior['count']==18 and prior['mode']=='actual local HTTP'
+          with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
+          base=f'http://127.0.0.1:{port}'; log=(out/'server.log').open('w')
+          env=os.environ.copy();env.pop('CALLE_API_KEY',None)
+          proc=subprocess.Popen([sys.executable,str(app/'returnready.py'),'--port',str(port),'--database','/tmp/returnready-demo/no-call.sqlite'],stdout=log,stderr=log,env=env)
+          summary={'status':'started','source_commit':'fc940c33882d5f46f244891c15129de911f08c4c','mode':'actual localhost HTTP; unmodified source and CSP','inputs':'synthetic built-in examples','live_provider_calls':0,'unit_http_tests':92,'inherited_browser_workflows':18}
+          scenes=[];errors=[];requests=[]
+          try:
+              for i in range(60):
+                  try:
+                      with urllib.request.urlopen(base+'/api/config',timeout=1) as r:config=json.load(r)
+                      break
+                  except OSError:time.sleep(.1)
+              else:raise RuntimeError('Server did not become ready')
+              assert config['live'] is False
+              with sync_playwright() as pw:
+                  ab='/tmp/rr-agent/node_modules/.bin/agent-browser';common=[ab,'--session','returnready-demo','--executable-path',pw.chromium.executable_path]
+                  with (out/'agent-browser-smoke.log').open('w') as smoke:
+                      try:
+                          for cmd in [['open',base],['wait','--load','networkidle'],['snapshot','-i'],['screenshot',str(out/'agent-browser-smoke.png')],['eval','document.body.innerText.trim().length > 100 && document.querySelector("#mode").textContent.includes("NO-CALL")'],['errors']]:
+                              res=subprocess.run(common+cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=50)
+                              smoke.write('$ '+' '.join(cmd)+'\n'+res.stdout+'\n');smoke.flush();assert res.returncode==0,res.stdout
+                      finally:subprocess.run(common+['close'],stdout=smoke,stderr=smoke,timeout=20)
+                  browser=pw.chromium.launch(headless=True)
+                  ctx=browser.new_context(viewport={'width':1440,'height':1000},record_video_dir=str(out/'raw'),record_video_size={'width':1440,'height':1000},accept_downloads=True)
+                  page=ctx.new_page();video=page.video;started=time.monotonic()
+                  page.on('pageerror',lambda e:errors.append(str(e)));page.on('request',lambda r:requests.append(r.url))
+                  def scene(label,caption,seconds=8):
+                      t=time.monotonic()-started;scenes.append({'name':label,'start':t,'caption':caption})
+                      page.screenshot(path=str(out/(label+'.png')));page.wait_for_timeout(seconds*1000)
+                  page.goto(base,wait_until='networkidle');expect(page.locator('.counter')).to_contain_text('4/5');assert page.locator('#start').is_disabled()
+                  scene('01-intro','ReturnReady checks spoken return details against written instructions. This is the real local app using synthetic examples; no phone call is being made.',7)
+                  page.select_option('#case','matching');assert page.locator('#export').is_disabled();page.click('#run');expect(page.locator('.counter')).to_contain_text('5/5')
+                  scene('02-matching','Five details match the supplied record. Matching words are evidence to review, not permission to ship a package.',8)
+                  page.select_option('#case','later_correction');page.click('#run');expect(page.locator('.counter')).to_contain_text('4/5');expect(page.locator('#questions')).to_contain_text('22 Different Road')
+                  scene('03-correction','Now the recipient changes the address later in the conversation. ReturnReady withdraws the earlier address match instead of trusting the first extraction.',10)
+                  page.get_by_role('button',name='Inspect Return destination',exact=True).click();expect(page.locator('#evidence')).to_contain_text('Correction: the return address changed.');page.locator('#evidence').scroll_into_view_if_needed()
+                  scene('04-source','Inspect the destination: the full later recipient quotation is retained alongside the earlier answer and written value.',10)
+                  page.locator('.transcript summary').click();assert page.locator('.turn').count()==6;page.locator('.transcript').scroll_into_view_if_needed()
+                  scene('05-transcript','All six source turns remain available. The operator can inspect what was actually said rather than rely on a generated summary.',9)
+                  page.locator('#questions').scroll_into_view_if_needed()
+                  scene('06-clarification','The app prepares a specific written-versus-spoken clarification. It does not contact a courier, accept fees or authorize a return.',9)
+                  page.locator('#export').scroll_into_view_if_needed()
+                  with page.expect_download() as dl:page.click('#export')
+                  dl.value.save_as(out/'recorded-review.json');review=json.loads((out/'recorded-review.json').read_text());assert review['clearance_to_ship'] is False and review['synthetic_example'] is True and review['checks'][1]['revision_turns'][0]['turn_index']==5
+                  with page.expect_download() as dl:page.click('#saveSession')
+                  dl.value.save_as(out/'recorded-session.json');session=json.loads((out/'recorded-session.json').read_text());assert session['format']=='returnready-session'
+                  page.locator('#notice').scroll_into_view_if_needed()
+                  scene('07-save','Export a source-linked review, or save a resumable input session. The downloaded review explicitly records no shipping clearance.',8)
+                  page.click('[data-view=source]');page.locator('#responseJson').scroll_into_view_if_needed()
+                  scene('08-inputs','The source view exposes the supplied written policy and call-result JSON. Saved input is inspectable; it is not an authentication certificate.',8)
+                  raw=page.input_value('#responseJson');page.fill('#responseJson',raw+' ');assert page.locator('#rawExport').is_disabled() and page.locator('#export').is_disabled();page.locator('#rawExport').scroll_into_view_if_needed()
+                  scene('09-edit','Even a source edit invalidates the old review immediately. Export stays disabled until those inputs are inspected again.',8)
+                  page.set_input_files('#sessionFile',str(out/'recorded-session.json'));expect(page.locator('#notice')).to_contain_text('freshly rechecked');expect(page.locator('.counter')).to_contain_text('4/5');page.evaluate('window.scrollTo(0,0)')
+                  scene('10-reopen','Reopen the session: comparisons and freshness are recomputed from the inputs. A saved approval cannot become a fresh result.',9)
+                  page.select_option('#case','agent_echo');page.click('#run');expect(page.locator('.counter')).to_contain_text('0/5')
+                  scene('11-caller','A second failure case: words spoken only by the caller cannot satisfy recipient evidence. The result remains zero supported matches.',8)
+                  page.select_option('#case','later_correction');page.click('#run');expect(page.locator('.counter')).to_contain_text('4/5');page.evaluate('window.scrollTo(0,0)')
+                  scene('12-limit','Prototype limits: lexical review can miss paraphrases. The REST adapter still needs an authenticated live test. This recording demonstrates no-call software, not a completed merchant call.',11)
+                  assert not errors,errors
+                  assert all(u.startswith(base+'/') or u==base for u in requests),requests
+                  assert not any('/api/start' in u or '/api/poll' in u for u in requests)
+                  summary.update(status='passed',browser=browser.version,errors=errors,requests=requests,scenes=scenes,elapsed=time.monotonic()-started)
+                  ctx.close();shutil.copyfile(video.path(),out/'ReturnReady-actual-app-raw.webm');browser.close()
+              (out/'scenes.json').write_text(json.dumps(scenes,indent=2))
+          except BaseException as e:
+              summary.update(status='failed',error=str(e));raise
+          finally:
+              proc.terminate();proc.wait(timeout=10);log.close()
+              (out/'capture-verification.json').write_text(json.dumps(summary,indent=2))
+          PY
+          env -u CALLE_API_KEY /tmp/rr-browser/bin/python /tmp/record_returnready.py
+          cp /tmp/record_returnready.py /tmp/returnready-demo/
+      - name: Check that the contribution runtime remains unchanged
+        run: |
+          git diff --exit-code -- apps/python/returnready/returnready.py apps/python/returnready/web/index.html apps/python/returnready/test_returnready.py apps/python/returnready/test_completion.py apps/python/returnready/http_test.py apps/python/returnready/browser_completion.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: returnready-actual-app-demo
+          path: |
+            /tmp/returnready-demo/*.log
+            /tmp/returnready-demo/*.json
+            /tmp/returnready-demo/*.txt
+            /tmp/returnready-demo/*.png
+            /tmp/returnready-demo/*.webm
+            /tmp/returnready-demo/*.py
+          retention-days: 14
