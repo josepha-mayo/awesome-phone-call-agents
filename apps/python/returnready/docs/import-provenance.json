@@ -1,0 +1,14 @@
+{
+  "source_repository": "josepha-mayo/Joseph-Portfolio",
+  "source_commit": "6a5ea6515219f1feb273288a7e4e27d3417de493",
+  "upstream_base": "8f75267dda86c7261ad4f079b28db30a9df67e1b",
+  "unchanged_runtime_and_test_sha256": {
+    "returnready.py": "d035e11c6a0f85d07a7dde54fd385bdfed3fdc9af78a6ff56463186ef819a2af",
+    "test_returnready.py": "ef1d2da7be0c8d47eaa432ee603a9e9c233169d0cfab05641e10451c13ce6291",
+    "http_test.py": "f6318268a73a9a28997e7ad46a5daa8b9253a886ee91a3ab297fe8273a2687d8",
+    "test_completion.py": "7e2ffb38917bae4be08da8d77ba64e3de80b87e20ef8dd8e40291b873aec33bc",
+    "browser_completion.py": "9d5c1d29085f757e461d33195d4880d790eca8eeea2eb38af4955f19306f4c2a",
+    "web/index.html": "101da8a7ba70552c66164f69a92c171c9fd6a021a7e67376801e4ffa064ea308"
+  },
+  "changes": "Contribution-only README and handoff edits, no runtime or test changes; no private contact/plan identifiers, images or unrelated portfolio files imported."
+}

@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-09T02:21:57.339477+00:00",
+  "upstream_base": "8f75267dda86c7261ad4f079b28db30a9df67e1b",
+  "source_commit": "6a5ea6515219f1feb273288a7e4e27d3417de493",
+  "repository_validation": "passed before and after importing the app; validation scripts unchanged",
+  "python_unit_and_http_tests": 92,
+  "browser_workflows": 18,
+  "browser_mode": "actual local HTTP with default security policy",
+  "runtime_and_tests_match_reviewed_candidate": true,
+  "live_provider_calls": 0,
+  "provider_live_verified": false,
+  "scope": "No-call synthetic fixtures and local HTTP. Upstream PR and competition acceptance are separate statuses."
+}
