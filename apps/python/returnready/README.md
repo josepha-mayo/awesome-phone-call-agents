@@ -6,7 +6,7 @@ A local return-enquiry workbench for comparing five spoken return details with t
 
 ## Working revision, explicit provider gate
 
-The current 0.3 candidate runs locally with Python's standard library. **No completed CALL-E service call or live account compatibility has been verified.** The connected CALL-E planner still refuses NG/English. Its published SDK/API region list includes Nigeria, but this app has not exercised an authenticated Nigerian API call. It does not silently substitute a different country or number.
+The current 0.4 candidate adds an operator-mediated importer for finished CALL-E MCP results. A real authorized US hotline attempt connected on September 9 for 36 seconds, but permission for the recorded/transcribed enquiry was not granted and no return details were obtained. This is a recorded negative-path attempt, not a successful merchant test. Selected real outcome metadata was processed by the local engine; the browser demonstration uses redacted metadata and publishes no call transcript or recording. Nigeria remains restricted according to support. The separate REST adapter is still not live-verified.
 
 The source here was recovered from the original September 7 v0.1 `ReturnReady-prototype.zip`. A later v0.2 description existed, but its source could not be located. This candidate reimplements and tests the described later-correction and persistence changes against the actual recovered source. It does not count the reported 96 v0.2 tests as inherited. `docs/PROTOTYPE-README.md` preserves the recovered prototype documentation; prior execution records remain in the pinned source history. The small `evidence03/` records document the no-call candidate checks.
 
@@ -49,10 +49,14 @@ Only an **unstarted preview** can be cancelled in this app. Active calls require
 
 See `docs/LIVE-TEST-HANDOFF.md` for the blocked live-test checklist. The interface can help prepare a call, but no test may be labelled live until an actual provider result exists.
 
+## Finished MCP result import
+
+Use the existing Inspect the data view, open Import a finished CALL-E MCP result, and supply the expected run ID, original observation time and an explicit permission review. Unknown or unavailable permission produces a metadata-only hold. No transcript or extracted claims are saved, and no call or retry is made. Even on a permitted result, return fields must be separately quoted and source-indexed; no answer is invented from a success flag. `docs/MCP-RESULT-IMPORT.md` documents the narrow observed format, CLI and limitations. The result is operator-supplied, not independently authenticated.
+
 ## Reproduce the candidate checks
 
 ```sh
-python -m unittest test_returnready http_test test_completion -v
+python -m unittest test_returnready http_test test_completion test_mcp_import -v
 # Real HTTP/Chromium run (requires Playwright + Chromium):
 python browser_completion.py
 # Explicit isolated bridge fallback, never equivalent to the HTTP run:
@@ -65,7 +69,7 @@ There is no third-party runtime service in the default mode. For the browser che
 
 ## Contribution scope and live-service status
 
-This is a runnable application contribution under `apps/python/returnready/`. It is submitted as inspectable no-call code, not evidence of a completed competition entry. A supported authenticated CALL-E test and result, confirmed account details and live-workflow demonstration remain unverified. A synthetic review example must not be represented as a live merchant conversation.
+This is a runnable application contribution under `apps/python/returnready/`, not proof of a completed competition entry. The connected MCP negative-path attempt and the result importer are distinct from the unverified REST adapter. Successful authorized return-information testing, confirmation of the CALL-E account email, public video hosting and final submission remain open. A synthetic review example is never a live merchant conversation.
 
 ## Provenance, privacy and limits
 

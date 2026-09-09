@@ -34,7 +34,7 @@ FIELDS = {
     'terms': 'Refund / replacement terms',
 }
 QUALIFIER = re.compile(r'\b(not|unless|except|maybe|may|might|estimated|approximate|subject to|only if|cannot)\b', re.I)
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 MAX_BODY = 180_000
 # Conservative lexical flags for an editor, not semantic contradiction detection.
 REVISION = re.compile(r"\b(correction|correct that|sorry|actually|instead|changed|change that|revised|ignore that|updated|rather than|scratch that|wait)\b", re.I)
@@ -187,6 +187,11 @@ def inspect(policy: Any, response: Any, now: datetime | None = None) -> dict:
     written = validate_policy(policy)
     require(isinstance(response, dict), 'Provider response must be an object.')
     require(len(encoded(response)) <= MAX_BODY, 'Response is too large.')
+    receipt = None
+    if 'mcp_receipt' in response:
+        from mcp_import import validate_receipt
+        receipt = validate_receipt(response['mcp_receipt'])
+        require(receipt['observed_at'] == response.get('observed_at'), 'MCP observation time changed.')
     received = response.get('observed_at')
     require(received is not None, 'Record when the result was observed.')
     age = (now - instant(received)).total_seconds()
@@ -215,6 +220,10 @@ def inspect(policy: Any, response: Any, now: datetime | None = None) -> dict:
         require(isinstance(row, dict) and set(row) == {'field', 'value', 'quote', 'turn_index'}, 'Malformed extracted field.')
         require(isinstance(row['field'], str) and row['field'] in FIELDS and row['field'] not in mapped, 'Duplicate or unknown extracted field.')
         mapped[row['field']] = row
+    if receipt is not None:
+        completed = completed and receipt['processing_permitted']
+        if receipt['transcript_withheld']:
+            require(not turns and not rows, 'A blocked MCP receipt cannot contain transcript or extracted claims.')
     checks = []
     for field, label in FIELDS.items():
         row = mapped.get(field, {})
@@ -248,12 +257,16 @@ def inspect(policy: Any, response: Any, now: datetime | None = None) -> dict:
                 check.update(status='wording_matches', reason='Value is quoted from a recipient turn and matches the supplied written wording. Human review still required.')
         checks.append(check)
     unresolved = [c for c in checks if c['status'] != 'wording_matches']
-    return {'format': 'returnready-review', 'version': 1, 'created_at': now.isoformat(),
+    report = {'format': 'returnready-review', 'version': 1, 'created_at': now.isoformat(),
             'status': 'hold_for_clarification' if unresolved else 'ready_for_human_review',
             'clearance_to_ship': False, 'source_sha256': digest(response), 'policy_sha256': digest(written),
             'checks': checks, 'open_questions': [clarification_question(c) for c in unresolved],
             'supported_matches': len(checks) - len(unresolved),
             'scope': 'Local transcript/policy comparison. Caller text, summaries and confidence scores cannot stand in for recipient evidence. No shipment, refund or purchase is authorized.'}
+
+    if receipt is not None:
+        report['mcp_receipt'] = receipt
+    return report
 
 
 def clarification_question(check: dict) -> str:
@@ -472,6 +485,11 @@ def serve(port: int, allow_calls: bool, database: Path) -> None:
                 require(self.headers.get('Content-Type', '').startswith('application/json'), 'Expected JSON.')
                 data = json.loads(self.rfile.read(length)); require(isinstance(data, dict), 'Expected object.')
                 if self.path == '/api/inspect': result = inspect(data.get('policy'), data.get('response'))
+                elif self.path == '/api/mcp/import':
+                    from mcp_import import to_session
+                    result = restore_session(to_session(data.get('raw'), policy=data.get('policy'),
+                        expected_run_id=data.get('expected_run_id'), observed_at=data.get('observed_at'),
+                        consent=data.get('consent'), fields=data.get('fields')))
                 elif self.path == '/api/session/save': result = save_session(data.get('policy'), data.get('response'), data.get('synthetic', False))
                 elif self.path == '/api/session/open': result = restore_session(data)
                 elif self.path == '/api/preview': result = ledger.preview(data)

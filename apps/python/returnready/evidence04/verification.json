@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "started_at": "2026-09-09T18:03:33.255145+00:00",
+  "commands": [
+    {
+      "name": "repository-before",
+      "exit_code": 0,
+      "seconds": 18.97
+    },
+    {
+      "name": "patch-reviewed-source",
+      "exit_code": 0,
+      "seconds": 0.03
+    },
+    {
+      "name": "python-tests",
+      "exit_code": 0,
+      "seconds": 4.31
+    },
+    {
+      "name": "inherited-browser",
+      "exit_code": 0,
+      "seconds": 49.87
+    },
+    {
+      "name": "mcp-browser-and-demo",
+      "exit_code": 0,
+      "seconds": 159.88
+    },
+    {
+      "name": "restore-historical-evidence",
+      "exit_code": 0,
+      "seconds": 0.12
+    },
+    {
+      "name": "repository-after",
+      "exit_code": 0,
+      "seconds": 18.59
+    }
+  ],
+  "provider_calls_in_verification": 0,
+  "base_commit": "fc940c33882d5f46f244891c15129de911f08c4c",
+  "workflow_run": "34386618475",
+  "contribution_published": false,
+  "python_tests": 130,
+  "inherited_python_tests": 92,
+  "new_python_tests": 38,
+  "inherited_browser_workflows": 18,
+  "new_browser_workflows": 15,
+  "total_browser_workflows": 33,
+  "demo_duration_seconds": 119.72,
+  "source_sha256": {
+    "mcp_import.py": "03fd39ea695be1a0522eee694982b8a82cd88ec68883b6376f84104ebd054804",
+    "test_mcp_import.py": "d4c5e6c66b4462c2dfef770a3145fecea1f595d7abb4d2e2b31ce62bef4bbf8b",
+    "browser_mcp.py": "2aa95e0afe4c5701f498bbcb0a661c0698327ffda9f8695416d18742cee9df9d",
+    "returnready.py": "7f66ac6cff6ee6dbe76ad39f02a761ee0c732a223b048c00b9bbf5a3ed8c00aa",
+    "web/index.html": "1fcd289f1c69f32708db98781ad557347a5a14c04fc23a116e125c1942935af3",
+    "README.md": "ac3a8394bdf4f7f854370869873240bae20393031c4f90595b76ef8407846c9c",
+    "docs/MCP-RESULT-IMPORT.md": "731240d7c0e0ffedeff0b24609c482f2257ccdb13f09e7007be13d4086d55ffe"
+  },
+  "inherited_assertions_unchanged": true,
+  "scope": "Operator-mediated finished MCP import; real localhost tests. The demo uses synthetic review cases and redacted metadata from one blocked hotline attempt. No raw call transcript, voice or provider identifier is published. No REST live validation, merchant success or customer benefit is established.",
+  "finished_at": "2026-09-09T18:07:45.024608+00:00"
+}
