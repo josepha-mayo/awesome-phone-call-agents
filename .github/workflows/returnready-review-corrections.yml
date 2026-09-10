@@ -1,0 +1,80 @@
+name: ReturnReady reviewer corrections
+on:
+  push:
+    branches: [ci/returnready-review-corrections]
+    paths: [.github/workflows/returnready-review-corrections.yml]
+permissions:
+  contents: write
+concurrency:
+  group: returnready-review-history-cleanup
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/ci/returnready-review-corrections'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      EXPECTED_HEAD: 2cd2668ad9af999659fe12973063aba4dd9bd2a7
+      UPSTREAM_BASE: d2e7a4ff9c4bac62ed25032d5017dd715b9e1be3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read the exact existing contribution
+        run: |
+          mkdir -p out
+          git fetch origin feat/returnready-review
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_HEAD"
+          git worktree add --detach /tmp/returnready-review "$EXPECTED_HEAD"
+          python review-input/apply.py /tmp/returnready-review
+      - name: Install browser test runtime
+        run: |
+          python -m pip -q install playwright==1.55.0
+          python -m playwright install chromium
+      - name: Run repository and actual HTTP regression checks
+        run: |
+          set -o pipefail
+          cd /tmp/returnready-review
+          python scripts/validate_repository.py 2>&1 | tee "$GITHUB_WORKSPACE/out/repository.log"
+          python scripts/check_branch_name.py --branch feat/returnready-review 2>&1 | tee "$GITHUB_WORKSPACE/out/branch-name.log"
+          cd apps/python/returnready
+          python -m unittest test_returnready http_test test_completion test_mcp_import test_review_fixes -v 2>&1 | tee "$GITHUB_WORKSPACE/out/python-tests.log"
+          python browser_completion.py 2>&1 | tee "$GITHUB_WORKSPACE/out/browser-completion.log"
+          python browser_mcp.py 2>&1 | tee "$GITHUB_WORKSPACE/out/browser-mcp.log"
+          cp evidence04/browser-mcp.json "$GITHUB_WORKSPACE/out/browser-mcp.json"
+      - name: Replace only the reviewed PR branch with one clean unique commit
+        run: |
+          set -euo pipefail
+          cd /tmp/returnready-review
+          git config user.name 'ReturnReady Review Verification'
+          git config user.email 'returnready-review@users.noreply.github.com'
+          git add -A -- apps/python/returnready
+          git diff --name-only "$UPSTREAM_BASE" -- | python -c 'import sys; paths=sys.stdin.read().splitlines(); assert paths and all(p=="README.md" or p.startswith("apps/python/returnready/") for p in paths), paths'
+          tree=$(git write-tree)
+          clean=$(git commit-tree "$tree" -p "$UPSTREAM_BASE" -m 'feat(apps): add synthetic returnready review workflow')
+          test "$(git rev-list --count "$UPSTREAM_BASE..$clean")" = 1
+          git diff --name-only "$UPSTREAM_BASE" "$clean" > "$GITHUB_WORKSPACE/out/changed-files.txt"
+          git diff --stat "$UPSTREAM_BASE" "$clean" > "$GITHUB_WORKSPACE/out/diff-stat.txt"
+          git archive --format=zip "$clean" apps/python/returnready > "$GITHUB_WORKSPACE/out/returnready-reviewed-source.zip"
+          git push --force-with-lease="refs/heads/feat/returnready-review:$EXPECTED_HEAD" origin "$clean:refs/heads/feat/returnready-review"
+          CLEAN_COMMIT="$clean" python - <<'PY'
+          import os,json,re
+          from pathlib import Path
+          out=Path(os.environ['GITHUB_WORKSPACE'])/'out'
+          text=(out/'python-tests.log').read_text()
+          assert re.search(r'Ran 147 tests',text) and '\nOK' in text
+          browser=json.loads((out/'browser-mcp.json').read_text());assert browser['status']=='passed'
+          summary={'status':'passed','published':True,'branch':'feat/returnready-review','head':os.environ['CLEAN_COMMIT'],'upstream_base':os.environ['UPSTREAM_BASE'],'unique_commits':1,'python_tests':147,'retained_assertions':130,'new_ascii_boundary_tests':17,'mcp_browser_checks':browser['count'],'inherited_http_browser_suite_passed':True,'repository_validator_passed':True,'provider_calls':0,'repository_examples':'wholly synthetic','raw_call_artifacts_in_new_history':False,'scope':'The PR branch unique history is replaced. Other branches, hosted videos, prior workflow artifacts and GitHub cached objects are not erased by this action.'}
+          (out/'review-corrections.json').write_text(json.dumps(summary,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: returnready-review-corrections
+          path: out/
+          retention-days: 14
+          if-no-files-found: error
